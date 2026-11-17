@@ -46,6 +46,7 @@ def compare_scripts(ideal_path, test_path, timecodes, test_name, expected_errors
     test_script.sort_by_time()
     failed = 0
     ft = format_time
+    logging.info('Per-line frame diffs (test - ideal):')
     for idx, (ideal, test) in enumerate(zip(ideal_script.events, test_script.events)):
         ideal_start_frame = timecodes.get_frame_number(ideal.start)
         ideal_end_frame = timecodes.get_frame_number(ideal.end)
@@ -53,23 +54,19 @@ def compare_scripts(ideal_path, test_path, timecodes, test_name, expected_errors
         test_start_frame = timecodes.get_frame_number(test.start)
         test_end_frame = timecodes.get_frame_number(test.end)
 
-        if ideal_start_frame != test_start_frame and ideal_end_frame != test_end_frame:
-            logging.debug(u'{0}: start and end time failed at "{1}". {2}-{3} vs {4}-{5}'.format(
-                idx, strip_tags(ideal.text), ft(ideal.start), ft(ideal.end), ft(test.start), ft(test.end))
-            )
+        start_diff = test_start_frame - ideal_start_frame
+        end_diff = test_end_frame - ideal_end_frame
+
+        # output cropping contract: output times must be non-negative and ordered
+        invalid_crop = test.start < 0 or test.end < 0 or test.end < test.start
+
+        line_failed = start_diff != 0 or end_diff != 0 or invalid_crop
+        if line_failed:
             failed += 1
-        elif ideal_end_frame != test_end_frame:
-            logging.debug(
-                u'{0}: end time failed at "{1}". {2} vs {3}'.format(
-                    idx, strip_tags(ideal.text), ft(ideal.end), ft(test.end))
-            )
-            failed += 1
-        elif ideal_start_frame != test_start_frame:
-            logging.debug(
-                u'{0}: start time failed at "{1}". {2} vs {3}'.format(
-                    idx, strip_tags(ideal.text), ft(ideal.start), ft(test.start))
-            )
-            failed += 1
+
+        logging.info(u'{0}: "{1}" start {2} ({3:+d}f), end {4} ({5:+d}f){6}'.format(
+            idx, strip_tags(ideal.text).strip()[:40], ft(test.start), start_diff, ft(test.end), end_diff,
+            ' [INVALID CROP]' if invalid_crop else ''))
 
     logging.info('Total lines: {0}, good: {1}, failed: {2}'.format(len(ideal_script.events), len(ideal_script.events)-failed, failed))
 
@@ -82,6 +79,19 @@ def compare_scripts(ideal_path, test_path, timecodes, test_name, expected_errors
     else:
         logging.critical('Met expectations')
         return True
+
+
+def log_min_similarity(log_path):
+    """Reports the minimum audio-match similarity (1 - diff) across all shifted groups."""
+    try:
+        with open(log_path) as log_file:
+            diffs = [float(x) for x in re.findall(r'diff: ([0-9.]+)', log_file.read())]
+    except IOError:
+        diffs = []
+    if diffs:
+        logging.info('Minimum similarity: {0:0.6f} (over {1} groups)'.format(1 - max(diffs), len(diffs)))
+    else:
+        logging.info('Minimum similarity: n/a (no shifted groups found in the log)')
 
 
 def run_test(base_path, plots_path, test_name, params):
@@ -97,7 +107,8 @@ def run_test(base_path, plots_path, test_name, params):
 
     folder = os.path.join(base_path, params['folder'])
 
-    cmd = ["sushi"]
+    sushi_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'sushi.py')
+    cmd = [sys.executable, sushi_path]
 
     safe_add_path(cmd, folder, '--src', 'src')
     safe_add_path(cmd, folder, '--dst', 'dst')
@@ -122,10 +133,17 @@ def run_test(base_path, plots_path, test_name, params):
 
     with open(log_path, "w") as log_file:
         try:
-            subprocess.call(cmd, stderr=log_file, stdout=log_file)
+            exit_code = subprocess.call(cmd, stderr=log_file, stdout=log_file)
         except Exception as e:
-            logging.critical('Sushi failed on test "{0}": {1}'.format(test_name, e.message))
+            logging.critical('Sushi failed on test "{0}": {1}'.format(test_name, str(e)))
             return False
+
+    logging.info('Sushi exit code: {0}'.format(exit_code))
+    if exit_code != 0:
+        logging.critical('Sushi exited with a non-zero code on test "{0}"'.format(test_name))
+        return False
+
+    log_min_similarity(log_path)
 
     with set_file_logger(log_path):
         ideal_path = os.path.join(folder, params['ideal'])
@@ -189,7 +207,7 @@ def run():
         return not args.run_only or name in args.run_only
 
     failed = ran = 0
-    for test_name, params in config.get('tests', {}).iteritems():
+    for test_name, params in config.get('tests', {}).items():
         if not should_run(test_name):
             continue
         if not params.get('disabled', False):
@@ -201,13 +219,14 @@ def run():
             logging.warn('Test "{0}" disabled'.format(test_name))
 
     if should_run("wavs"):
-        for test_name, params in config.get('wavs', {}).iteritems():
+        for test_name, params in config.get('wavs', {}).items():
             ran += 1
             if not run_wav_test(test_name, os.path.join(config['basepath'], params['file']), params):
                 failed += 1
             logging.info('')
 
     logging.info('Ran {0} tests, {1} failed'.format(ran, failed))
+    sys.exit(1 if failed else 0)
 
 
 if __name__ == '__main__':

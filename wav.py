@@ -1,15 +1,39 @@
 import logging
 import cv2
 import numpy as np
-from chunk import Chunk
 import struct
 import math
+from functools import reduce
 from time import time
 import os.path
 from common import SushiError, clip
 
 WAVE_FORMAT_PCM = 0x0001
 WAVE_FORMAT_EXTENSIBLE = 0xFFFE
+
+
+class RiffChunk(object):
+    """Minimal RIFF chunk reader (replacement for the removed `chunk` module)."""
+    def __init__(self, file):
+        self._file = file
+        self._name = file.read(4)
+        if len(self._name) < 4:
+            raise EOFError
+        size = file.read(4)
+        if len(size) < 4:
+            raise EOFError
+        self.chunksize = struct.unpack('<L', size)[0]
+        self._start = file.tell()
+
+    def getname(self):
+        return self._name
+
+    def read(self, size):
+        return self._file.read(size)
+
+    def skip(self):
+        # chunks are word-aligned: a pad byte follows odd-sized chunks
+        self._file.seek(self._start + self.chunksize + (self.chunksize & 1))
 
 
 class DownmixedWavFile(object):
@@ -19,10 +43,10 @@ class DownmixedWavFile(object):
         super(DownmixedWavFile, self).__init__()
         self._file = open(path, 'rb')
         try:
-            riff = Chunk(self._file, bigendian=False)
-            if riff.getname() != 'RIFF':
+            riff = RiffChunk(self._file)
+            if riff.getname() != b'RIFF':
                 raise SushiError('File does not start with RIFF id')
-            if riff.read(4) != 'WAVE':
+            if riff.read(4) != b'WAVE':
                 raise SushiError('Not a WAVE file')
 
             fmt_chunk_read = False
@@ -31,14 +55,14 @@ class DownmixedWavFile(object):
 
             while True:
                 try:
-                    chunk = Chunk(self._file, bigendian=False)
+                    chunk = RiffChunk(self._file)
                 except EOFError:
                     break
 
-                if chunk.getname() == 'fmt ':
+                if chunk.getname() == b'fmt ':
                     self._read_fmt_chunk(chunk)
                     fmt_chunk_read = True
-                elif chunk.getname() == 'data':
+                elif chunk.getname() == b'data':
                     if file_size > 0xFFFFFFFF:
                         # large broken wav
                         self.frames_count = (file_size - self._file.tell()) // self.frame_size
@@ -63,13 +87,13 @@ class DownmixedWavFile(object):
 
     def readframes(self, count):
         if not count:
-            return ''
+            return np.empty(0, dtype=np.float32)
         data = self._file.read(count * self.frame_size)
         if self.sample_width == 2:
-            unpacked = np.fromstring(data, dtype=np.int16)
+            unpacked = np.frombuffer(data, dtype=np.int16)
         elif self.sample_width == 3:
             raw_bytes = np.ndarray(len(data), 'int8', data)
-            unpacked = np.zeros(len(data) / 3, np.int16)
+            unpacked = np.zeros(len(data) // 3, np.int16)
             unpacked.view(dtype='int8')[0::2] = raw_bytes[1::3]
             unpacked.view(dtype='int8')[1::2] = raw_bytes[2::3]
         else:
@@ -85,7 +109,7 @@ class DownmixedWavFile(object):
             if min_length != real_length:
                 logging.error("Length of audio channels didn't match. This might result in broken output")
 
-            channels = (unpacked[i::self.channels_count] for i in xrange(self.channels_count))
+            channels = (unpacked[i::self.channels_count] for i in range(self.channels_count))
             data = reduce(lambda a, b: a[:min_length]+b[:min_length], channels)
             data /= float(self.channels_count)
             return data
@@ -172,11 +196,20 @@ class WavStream(object):
 
     def _get_sample_for_time(self, timestamp):
         # this function gets REAL sample for time, taking padding into account
-        return int(self.sample_rate * timestamp) + self.padding_size
+        # floor() keeps the sampling contract symmetric for negative offsets
+        # (int() truncates towards zero, shifting negative times by one sample)
+        return int(math.floor(self.sample_rate * timestamp)) + self.padding_size
 
     def find_substream(self, pattern, window_center, window_size):
-        start_time = clip(window_center - window_size, -self.PADDING_SECONDS, self.duration_seconds)
-        end_time = clip(window_center + window_size, 0, self.duration_seconds + self.PADDING_SECONDS)
+        # the search window is padded symmetrically: the center is clipped into
+        # the padded stream range first, so both ends share the same contract
+        # of [-PADDING_SECONDS, duration + PADDING_SECONDS] and start <= end
+        window_center = clip(window_center, -self.PADDING_SECONDS,
+                             self.duration_seconds + self.PADDING_SECONDS)
+        start_time = clip(window_center - window_size, -self.PADDING_SECONDS,
+                          self.duration_seconds + self.PADDING_SECONDS)
+        end_time = clip(window_center + window_size, -self.PADDING_SECONDS,
+                        self.duration_seconds + self.PADDING_SECONDS)
 
         start_sample = self._get_sample_for_time(start_time)
         end_sample = self._get_sample_for_time(end_time) + len(pattern[0])

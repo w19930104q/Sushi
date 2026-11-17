@@ -1,0 +1,32 @@
+Sushi's running with arguments: --src tests/data/vfr-boundary/src.wav --dst tests/data/vfr-boundary/dst.wav --src-keyframes tests/data/vfr-boundary/src.keyframes.txt --dst-keyframes tests/data/vfr-boundary/dst.keyframes.txt --src-timecodes tests/data/vfr-boundary/src.timecodes.txt --dst-timecodes tests/data/vfr-boundary/dst.timecodes.txt --script tests/data/vfr-boundary/script.ass --max-kf-distance 2 -o tests/data/vfr-boundary/dst.wav.sushi.test.ass
+Done reading WAV tests/data/vfr-boundary/src.wav in 0.008403778076171875s
+Done reading WAV tests/data/vfr-boundary/dst.wav in 0.0065991878509521484s
+0:00:00.00-0:00:01.20: shift: -0.1500000000, diff: 0.0502623320
+0:00:02.50-0:00:03.90: shift: -0.1499166667, diff: 0.0278119482
+0:00:05.00-0:00:06.40: shift: -0.1500000000, diff: 0.0278083794
+0:00:07.50-0:00:08.80: shift: -0.1500000000, diff: 0.0278209243
+0:00:10.00-0:00:11.50: shift: -0.1500000000, diff: 0.0278989132
+0:00:12.50-0:00:14.00: shift: -0.1500000000, diff: 0.0278434660
+0:00:15.00-0:00:16.40: shift: -0.1500000000, diff: 0.0276532639
+0:00:17.50-0:00:19.00: shift: -0.1500000000, diff: 0.0276074167
+0:00:20.00-0:00:21.50: shift: -0.1500000000, diff: 0.0276794285
+0:00:22.50-0:00:24.00: shift: -0.1500000000, diff: 0.0280039068
+0:00:25.00-0:00:26.40: shift: -0.1500000000, diff: 0.0277841315
+0:00:28.50-0:00:30.00: shift: -0.1500000000, diff: 0.0279443115
+Group (start: 0:00:00.00, end: 0:00:30.00, lines: 12), shifts (start: -0.15000000000000036, end: -0.14999999999999858, average: -0.1499999999999996)
+Done in 0.04780745506286621s
+Per-line frame diffs (test - ideal):
+0: "Boundary line 0" start 0:00:00.00 (+0f), end 0:00:01.05 (+0f)
+1: "Boundary line 1" start 0:00:02.35 (+0f), end 0:00:03.75 (+0f)
+2: "Boundary line 2" start 0:00:04.85 (+0f), end 0:00:06.25 (+0f)
+3: "Boundary line 3" start 0:00:07.35 (+0f), end 0:00:08.65 (+0f)
+4: "Boundary line 4" start 0:00:09.85 (+0f), end 0:00:11.35 (+0f)
+5: "Boundary line 5" start 0:00:12.35 (+0f), end 0:00:13.85 (+0f)
+6: "Boundary line 6" start 0:00:14.85 (+0f), end 0:00:16.25 (+0f)
+7: "Boundary line 7" start 0:00:17.35 (+0f), end 0:00:18.85 (+0f)
+8: "Boundary line 8" start 0:00:19.85 (+0f), end 0:00:21.35 (+0f)
+9: "Boundary line 9" start 0:00:22.35 (+0f), end 0:00:23.85 (+0f)
+10: "Boundary line 10" start 0:00:24.85 (+0f), end 0:00:26.25 (+0f)
+11: "Boundary line 11" start 0:00:28.35 (+0f), end 0:00:29.85 (+0f)
+Total lines: 12, good: 12, failed: 0
+Met expectations

@@ -4,6 +4,7 @@ import subprocess
 from collections import namedtuple
 import logging
 import bisect
+import math
 
 from common import SushiError, get_extension
 import chapters
@@ -20,7 +21,7 @@ class FFmpeg(object):
             process = subprocess.Popen(['ffmpeg', '-hide_banner', '-i', path], stderr=subprocess.PIPE)
             out, err = process.communicate()
             process.wait()
-            return err
+            return err.decode('utf-8', 'replace') if isinstance(err, bytes) else err
         except OSError as e:
             if e.errno == 2:
                 raise SushiError("Couldn't invoke ffmpeg, check that it's installed")
@@ -75,7 +76,7 @@ class FFmpeg(object):
 
     @staticmethod
     def _get_chapters_times(info):
-        return map(float, re.findall(r'Chapter #0.\d+: start (\d+\.\d+)', info))
+        return list(map(float, re.findall(r'Chapter #0.\d+: start (\d+\.\d+)', info)))
 
     @staticmethod
     def _get_subtitles_streams(info):
@@ -133,41 +134,65 @@ class SCXviD(object):
 
 
 class Timecodes(object):
+    # Unified timestamp/frame conversion contract, shared by VFR and CFR timecodes:
+    # * get_frame_number(t): index of the frame displayed at timestamp t (floor
+    #   semantics, identical to CFR). Timestamps before the first frame map to
+    #   negative frame numbers; timestamps past the last frame extrapolate with the
+    #   default fps when one is known (v1), otherwise clamp to the last frame (v2).
+    # * get_frame_time(n): inverse of the above. Frame numbers outside of the
+    #   defined range NEVER wrap around the list - they extrapolate with the
+    #   default fps (v1) or clamp to the first/last defined timestamp (v2).
+    # * get_frame_size(t): duration of the frame displayed at t. The last defined
+    #   frame reuses the previous frame's duration (or the default fps) instead of
+    #   reporting a zero size.
     def __init__(self, times, default_fps):
         super(Timecodes, self).__init__()
         self.times = times
         self.default_frame_duration = 1.0 / default_fps if default_fps else None
 
     def get_frame_time(self, number):
-        try:
+        if not self.times:
+            return number * self.default_frame_duration
+        if 0 <= number < len(self.times):
             return self.times[number]
-        except IndexError:
-            if not self.default_frame_duration:
-                return self.get_frame_time(len(self.times)-1)
-            if self.times:
-                return self.times[-1] + (self.default_frame_duration) * (number - len(self.times) + 1)
-            else:
-                return number * self.default_frame_duration
+        if self.default_frame_duration:
+            if number < 0:
+                return self.times[0] + number * self.default_frame_duration
+            return self.times[-1] + self.default_frame_duration * (number - len(self.times) + 1)
+        # v2 timecodes carry no default fps - clamp instead of extrapolating
+        return self.times[0] if number < 0 else self.times[-1]
 
     def get_frame_number(self, timestamp):
-        if (not self.times or self.times[-1] < timestamp) and self.default_frame_duration:
-            return int((timestamp - sum(self.times)) / self.default_frame_duration)
-        return bisect.bisect_left(self.times, timestamp)
+        if not self.times:
+            if self.default_frame_duration:
+                return int(math.floor(timestamp / self.default_frame_duration))
+            return 0
+        if self.times[0] <= timestamp <= self.times[-1] or not self.default_frame_duration:
+            return bisect.bisect_right(self.times, timestamp) - 1
+        if timestamp < self.times[0]:
+            return int(math.floor((timestamp - self.times[0]) / self.default_frame_duration))
+        return len(self.times) - 1 + int(math.floor((timestamp - self.times[-1]) / self.default_frame_duration))
 
     def get_frame_size(self, timestamp):
-        try:
-            number = bisect.bisect_left(self.times, timestamp)
-        except:
+        if not self.times:
             return self.default_frame_duration
 
-        c = self.get_frame_time(number)
+        number = bisect.bisect_right(self.times, timestamp) - 1
 
-        if number == len(self.times):
-            p = self.get_frame_time(number - 1)
-            return c - p
-        else:
-            n = self.get_frame_time(number + 1)
-            return n - c
+        if number < 0:
+            # before the first frame - reuse the first frame's duration
+            if len(self.times) > 1:
+                return self.times[1] - self.times[0]
+            return self.default_frame_duration
+        if number >= len(self.times) - 1:
+            # the last frame (or past it) has no successor - reuse the previous
+            # interval instead of reporting a zero size
+            if self.default_frame_duration:
+                return self.default_frame_duration
+            if len(self.times) > 1:
+                return self.times[-1] - self.times[-2]
+            return self.default_frame_duration
+        return self.times[number + 1] - self.times[number]
 
     @classmethod
     def _convert_v1_to_v2(cls, default_fps, overrides):
@@ -219,7 +244,7 @@ class Timecodes(object):
                 return self.frame_duration
 
             def get_frame_number(self, timestamp):
-                return int(timestamp / self.frame_duration)
+                return int(math.floor(timestamp / self.frame_duration))
 
         return CfrTimecodes(fps)
 

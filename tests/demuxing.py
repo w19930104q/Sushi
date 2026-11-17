@@ -1,5 +1,5 @@
 import unittest
-import mock
+from unittest import mock
 
 from demux import FFmpeg, MkvToolnix, SCXviD
 from common import SushiError
@@ -60,7 +60,7 @@ class FFmpegTestCase(unittest.TestCase):
     @mock.patch('subprocess.Popen', new_callable=create_popen_mock)
     def test_get_info_call_args(self, popen_mock):
         FFmpeg.get_info('random_file.mkv')
-        self.assertEquals(popen_mock.call_args[0][0], ['ffmpeg', '-hide_banner', '-i', 'random_file.mkv'])
+        self.assertEqual(popen_mock.call_args[0][0], ['ffmpeg', '-hide_banner', '-i', 'random_file.mkv'])
 
     @mock.patch('subprocess.Popen', new_callable=create_popen_mock)
     def test_get_info_fail_when_no_mmpeg(self, popen_mock):
@@ -112,7 +112,7 @@ class SCXviDTestCase(unittest.TestCase):
                 raise OSError(2, 'ignored')
 
         popen_mock.side_effect = raise_no_app
-        self.assertRaisesRegexp(SushiError, '[fF][fF][mM][pP][eE][gG]',
+        self.assertRaisesRegex(SushiError, '[fF][fF][mM][pP][eE][gG]',
                                 lambda: SCXviD.make_keyframes('video.mkv', 'keyframes.txt'))
 
     @mock.patch('subprocess.Popen')
@@ -123,7 +123,7 @@ class SCXviDTestCase(unittest.TestCase):
             return mock.Mock()
 
         popen_mock.side_effect = raise_no_app
-        self.assertRaisesRegexp(SushiError, '[sS][cC][xX][vV][iI][dD]',
+        self.assertRaisesRegex(SushiError, '[sS][cC][xX][vV][iI][dD]',
                                 lambda: SCXviD.make_keyframes('video.mkv', 'keyframes.txt'))
 
 

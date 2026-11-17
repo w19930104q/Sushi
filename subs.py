@@ -80,7 +80,7 @@ class ScriptEventBase(object):
         self._shift += value
 
     def __repr__(self):
-        return unicode(self)
+        return str(self)
 
 
 class ScriptBase(object):
@@ -95,7 +95,7 @@ class SrtEvent(ScriptEventBase):
     is_comment = False
     style = None
 
-    EVENT_REGEX = re.compile("""
+    EVENT_REGEX = re.compile(r"""
                                (\d+?)\s+? # line-number
                                (\d{1,2}:\d{1,2}:\d{1,2},\d+)\s-->\s(\d{1,2}:\d{1,2}:\d{1,2},\d+).  # timestamp
                                (.+?) # actual text
@@ -112,7 +112,7 @@ class SrtEvent(ScriptEventBase):
         end = cls.parse_time(match.group(3))
         return SrtEvent(int(match.group(1)), start, end, match.group(4).strip())
 
-    def __unicode__(self):
+    def __str__(self):
         return u'{0}\n{1} --> {2}\n{3}'.format(self.source_index, self._format_time(self.start),
                                                self._format_time(self.end), self.text)
 
@@ -142,7 +142,7 @@ class SrtScript(ScriptBase):
             raise SushiError("Script {0} not found".format(path))
 
     def save_to_file(self, path):
-        text = '\n\n'.join(map(unicode, self.events))
+        text = '\n\n'.join(map(str, self.events))
         with codecs.open(path, encoding='utf-8', mode='w') as script:
             script.write(text)
 
@@ -168,7 +168,7 @@ class AssEvent(ScriptEventBase):
         self.margin_vertical = split[7]
         self.effect = split[8]
 
-    def __unicode__(self):
+    def __str__(self):
         return u'{0}: {1},{2},{3},{4},{5},{6},{7},{8},{9},{10}'.format(self.kind, self.layer,
                                                                        self._format_time(self.start),
                                                                        self._format_time(self.end),
@@ -262,13 +262,13 @@ class AssScript(ScriptBase):
             events = sorted(self.events, key=lambda x: x.source_index)
             lines.append(u'[Events]')
             lines.append(u'Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text')
-            lines.extend(map(unicode, events))
+            lines.extend(map(str, events))
 
         if self.other:
-            for section_name, section_lines in self.other.iteritems():
+            for section_name, section_lines in self.other.items():
                 lines.append('')
                 lines.append(section_name)
                 lines.extend(section_lines)
 
         with codecs.open(path, encoding='utf-8-sig', mode='w') as script:
-            script.write(unicode(os.linesep).join(lines))
+            script.write(os.linesep.join(lines))
